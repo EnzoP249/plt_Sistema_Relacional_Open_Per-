@@ -22,6 +22,8 @@ from ast import literal_eval
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
+from sqlalchemy import create_engine
+
 
 
 ###############################################################################
@@ -352,7 +354,7 @@ tbl_publicaciones["id"].nunique()
 # Se renombre un campo de la tabla tbl_publicaciones
 tbl_publicaciones.rename(columns=({"id":"publication_id"}), inplace=True)
 
-# Se comprende la estructura del dataframe (Data profiling)
+# Se comprende la estructura (Data profiling) del dataframe tbl_publicaciones
 tbl_publicaciones.info()
 tbl_publicaciones.describe()
 tbl_publicaciones.describe(include="all")
@@ -586,12 +588,59 @@ for i in range(len(df_ods["sustainable_development_goals"])):
 base_ods = pd.DataFrame(goals)
 base_ods.columns
 
+# Se analiza la estructura del dataframe base_ods
+base_ods.info()
+base_ods.shape
+base_ods.dtypes
+base_ods.describe()
+base_ods.nunique()
+base_ods.head(10)
+base_ods.columns
+
+# Se analiza la presencia de duplicados
+base_ods[["publication_id", "goal_id"]].nunique()
+
+duplicados = base_ods.duplicated(subset=["publication_id", "goal_id"])
+print("¿Existen duplicados?:", duplicados.any())
+
+# Se realiza un tipeo de los datos que integran el dataframe base_ods
+schema1 = {"publication_id":"string",
+           "goal_id":"string",
+           "display_name":"string",
+           "score":"float64"}
+
+base_ods = base_ods.astype(schema1)
+base_ods.info()
+base_ods.dtypes
+
 
 # Se construye la tabla ods
 tbl_ods = base_ods[["goal_id", "display_name"]]
 tbl_ods = tbl_ods.drop_duplicates(subset=["goal_id"])
 tbl_ods.rename(columns=({"display_name":"display_name_ods"}), inplace=True)
 
+# Se analiza la estructura del dataframe tbl_ods
+tbl_ods.info()
+tbl_ods.describe()
+tbl_ods.nunique()
+tbl_ods.head(10)
+tbl_ods.isna().sum()
+tbl_ods.columns
+
+
+# Se eliminan identificadores goal_id vacios
+tbl_ods = tbl_ods[tbl_ods["goal_id"].notna()]
+
+# Se eliminan duplicados del identificador goal_id
+tbl_ods = tbl_ods.drop_duplicates(subset=["goal_id"])
+
+
+# Se procede a tipear los datos
+schema2 = {"goal_id":"string",
+           "display_name_ods":"string"}
+
+tbl_ods = tbl_ods.astype(schema2)
+tbl_ods.info()
 
 ###############################################################################
 # Se construye la tabla ODSPublicacion
@@ -599,6 +648,16 @@ tbl_ods.rename(columns=({"display_name":"display_name_ods"}), inplace=True)
 tbl_odsPub = base_ods[["publication_id", "goal_id", "score"]]
 tbl_odsPub.shape
 tbl_odsPub.columns
+
+# Se analiza la estructura de este dataframe
+tbl_odsPub.info()
+tbl_odsPub.describe()
+tbl_odsPub.nunique()
+
+# Se analiza la presencia de duplicados
+duplicados = tbl_odsPub.duplicated(subset=["publication_id", "goal_id"])
+print("¿Existen duplicados?:", duplicados.any())
+
 
 ###############################################################################
 # SE CONSTRUYE LA TABLA Investigadores
@@ -992,171 +1051,9 @@ tbl_programa_becarios.rename(columns=({"Número de Contrato":"id_contrato_progra
 
 
 ###############################################################################
-#### PIECE OF CODE TO USE MYSQL WITH MY DIGITAL SOLUTION ######################
+# Se crea una nueva base de datos o esquema y se almacena la información de mis
+# dataframes en esa nueva base de datos
 ###############################################################################
-
-import pandas as pd
-import numpy as np
-from sqlalchemy import create_engine
-
-
-# En primer lugar, se establece la conexión entre python y MySQL
-
-usuario = "root"          # Usuario de MySQL
-contraseña = "###############"  # Contraseña de MySQL
-host = "localhost"        # Dirección del servidor (localhost para uso local)
-base_datos = "enzoalex"  # Nombre de la base de datos
-
-# A partir de una lista, se crea un dataframe
-lista = [10,20,30,40,50,60,45,46,75,100]
-marco = pd.DataFrame(lista, columns=["edad"])
-type(marco)
-
-
-# Crear la conexión usando pymysql de python
-conexion = create_engine(f"mysql+pymysql://{usuario}:{contraseña}@{host}/{base_datos}")
-
-# Subir el DataFrame como una tabla del database enzoalex
-tabla = "tbl_edad"  # Nombre de la tabla
-try:
-    marco.to_sql(name=tabla, con=conexion, if_exists="replace", index=False)
-    print(f"Tabla '{tabla}' creada exitosamente.")
-except Exception as e:
-    print(f"Error al subir la tabla: {e}")
-
-
-# Se sube una tabla a mi database enzoalex
-tabla = "tbl_edad"  # Nombre de la tabla
-try:
-    marco.to_sql(name=tabla, con=conexion, if_exists="replace", index=False)
-    print(f"Tabla '{tabla}' creada exitosamente.")
-except Exception as e:
-    print(f"Error al subir la tabla: {e}")
-
-
-import pandas as pd
-import numpy as np
-from sqlalchemy import create_engine
-
-
-# Se establece la conexión entre python y MySQL
-usuario = "root"          # Usuario de MySQL
-contraseña = "garabombo2468"  # Contraseña de MySQL
-host = "localhost"        # Dirección del servidor (localhost para uso local)
-base_datos = "enzoalex"  # Nombre de la base de datos
-
-
-# Crear la conexión usando pymysql de python
-conexion = create_engine(f"mysql+pymysql://{usuario}:{contraseña}@{host}/{base_datos}")
-
-
-# Se sube la tabla tbl_publicaciones a mi database enzoalex
-
-tabla = "tbl_publicaciones"  # Nombre de la tabla
-try:
-    tbl_publicaciones.to_sql(name=tabla, con=conexion, if_exists="replace", index=False)
-    print(f"Tabla '{tabla}' creada exitosamente.")
-except Exception as e:
-    print(f"Error al subir la tabla: {e}")
-
-
-# Se sube la tabla tabla_investigadores a mi database MySQL enzoalex
-tabla1 = "tbl_investigadores"  # Nombre de la tabla
-try:
-    tbl_investigadores.to_sql(name=tabla1, con=conexion, if_exists="replace", index=False)
-    print(f"Tabla '{tabla1}' creada exitosamente.")
-except Exception as e:
-    print(f"Error al subir la tabla: {e}")
-
-
-###############################################################################
-# SE REALIZA UN EJERCICIO
-###############################################################################
-tbl_investigadores.columns
-tbl_becarios.columns
-
-# Se obtiene los investigadores que han sido becarios
-# se eliminan aquellos investigadores que tienen codigo nan
-tbl_investigadores1 = tbl_investigadores.dropna(subset=["codigo_scopus"])
-tabla_becario1 = tbl_becarios.dropna(subset=["codigo_scopus"])
-
-jajaja = pd.merge(tbl_investigadores1, tabla_becario1, on="codigo_scopus")
-jajaja.columns
-
-jajaja = jajaja[["codigo_scopus", "author_name"]]
-
-jejeje = pd.merge(jajaja, tbl_programa_becarios, on="codigo_scopus")
-jejeje.columns
-jejeje.rename(columns=({"Número de Contrato":"id_contrato_programa"}), inplace=True)
-
-jijiji = pd.merge(jejeje, tbl_programa, on="id_contrato_programa")
-
-####################################################################################
-# Se realiza un análisis de publicaciones científicas considerando tbl_publicaciones
-####################################################################################
-
-# Se usa el dataframe tbl_publicaciones
-tbl_publicaciones.columns
-
-# Se consideran publicaciones científicas elaboradas despues del 2015
-ejercicio = tbl_publicaciones[tbl_publicaciones["publication_year"]>=2015]
-
-# Se identifica la frecuencia del type de publicacion
-ejercicio.type.value_counts()
-
-# Se consideran solo un subconjunto de types
-ejercicio = ejercicio.loc[
-    ejercicio["type"].isin(["article", "review", "book-chapter", "book"])
-]
-
-
-# Se construye una distribución por año
-ejercicio_tb = pd.pivot_table(ejercicio, values="publication_id", index="publication_year", aggfunc="count")
-ejercicio_tb.reset_index(inplace=True)
-
-# Convertir el dataframe ejercicio_tb en un archivo excel
-ejercicio_tb.to_excel("distribución_publicaciones_cientificas_arb.xlsx")
-
-###############################################################################
-# Se realiza una análisis de publicaciones científicas de un conjunto de universidades
-###############################################################################
-
-tabla6 = tabla_pubinvafil.copy()
-tabla7 = ejercicio.copy()
-tabla7.columns
-
-tabla7 = tabla7[["publication_id", "type", "publication_year"]]
-
-# Se realiza una fusion entre tabla6 y tabla7
-esquema = pd.merge(tabla6, tabla7, on="publication_id", how="left")
-esquema.columns
-
-# Me quedo solo con las instituciones peruanas
-esquema = esquema[esquema["institution_country_code"]=="PE"]
-esquema = esquema.drop_duplicates(subset=["publication_id", "institution_name"])
-
-# Me quedo solo con las entidades de education
-esquema = esquema[esquema["institution_type"]=="education"]
-esquema = esquema.dropna(subset=["publication_year"])
-
-# Se convierte la columna publication_year en un string
-esquema["publication_year"] = esquema["publication_year"].apply(lambda x: str(x))
-
-
-# Se construye un table pivote
-esquema_tb = pd.pivot_table(esquema, values="publication_id", index="institution_name", columns="publication_year", aggfunc="count")
-esquema_tb.reset_index(inplace=True)
-esquema_tb.to_excel("distribución_publicaciones_científicas_universidades_arb.xlsx")
-
-
-###############################################################################
-# Se crea una nueva base de datos o esquema
-###############################################################################
-
-import pandas as pd
-import numpy as np
-from sqlalchemy import create_engine
-
 
 # Se establece la conexión entre python y MySQL
 usuario = "root"          # Usuario de MySQL
@@ -1176,6 +1073,52 @@ tbl_publicaciones.to_sql(
     if_exists="append",
     index=False
 )
+
+# Se sube la tabla tbl_ods a mi database db_open_peru
+tbl_ods.to_sql(
+    "tbl_ods",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
+
+
+# Se sube la tabla tbl_odsPub a mi database db_open_peru
+tbl_odsPub.to_sql(
+    "tbl_odsPub",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
+
+
+
+###############################################################################
+# Se realiza el procedimiento inverso, es decir, se convierten las tablas de mi
+# MariaDB en dataframes
+###############################################################################
+
+# Ahora se trae la tabla sobre publicaciones científicas de SQL a Python
+df = pd.read_sql(
+    "SELECT * FROM db_open_peru.tbl_publicaciones",
+    con=engine
+)
+
+
+# Se realiza un shape del dataframe df
+df.shape
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
