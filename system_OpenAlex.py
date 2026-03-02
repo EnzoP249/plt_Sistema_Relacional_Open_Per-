@@ -23,8 +23,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 from sqlalchemy import create_engine
-
-
+import time
+from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 
 ###############################################################################
 # Estrategia para obtener los works del Perú usando la paginación compleja
@@ -32,31 +32,65 @@ from sqlalchemy import create_engine
 # El presente url presenta todos los works generados en donde hay participación de investigadores peruanos 
 ###############################################################################
 
-example_url_with_cursor = "https://api.openalex.org/works?filter=authorships.institutions.country_code:PE&cursor={}"
+API_KEY = "v9Ys1yuVJl3kNJYVql74Ip"          # <- pon tu key aquí
+MAILTO  = "enzo.lpge@gmail.com"  # <- opcional pero recomendado
 
-cursor = '*'
-
-# Se construye una lista que almacenará los trabajos de los investigadores peruanos 
+cursor = "*"
 trabajo_peru = []
 
-# Se establece un bucle para la descarga de todas las publicaciones científicas
+session = requests.Session()
+
+MAX_RETRIES = 8
+
 while cursor:
-    
-    # set cursor value and request page from OpenAlex
-    url = example_url_with_cursor.format(cursor)
-    print("\n" + url)
-    page_with_results = requests.get(url).json()
-    
-    results = page_with_results['results']
-    for api_result in results:
-       
-        trabajo_peru.append(api_result)
-        
-    cursor = page_with_results['meta']['next_cursor']
+    params = {
+        "filter": "authorships.institutions.country_code:PE",
+        "per_page": 200,
+        "cursor": cursor,
+        "api_key": API_KEY,
+        "mailto": MAILTO,
+        # opcional: reduce tamaño por request
+        # "select": "id,doi,display_name,publication_year,type,cited_by_count,authorships"
+    }
 
+    for attempt in range(MAX_RETRIES):
+        try:
+            r = session.get("https://api.openalex.org/works", params=params, timeout=90)
 
-# Al final, trabajo_peru contendrá todos los trabajos de investigadores peruanos
-print(f"La cantidad de trabajos encontrados es: {len(trabajo_peru)}")
+            # rate limit
+            if r.status_code == 429:
+                time.sleep(2 + attempt)
+                continue
+
+            # errores temporales del servidor
+            if r.status_code in (500, 502, 503, 504):
+                time.sleep(2 + attempt)
+                continue
+
+            # otros errores: muestra causa real y corta
+            if r.status_code != 200:
+                print("STATUS:", r.status_code)
+                print("URL:", r.url)
+                print("BODY:", r.text[:400])
+                r.raise_for_status()
+
+            data = r.json()
+            results = data.get("results", [])
+            trabajo_peru.extend(results)
+            cursor = data.get("meta", {}).get("next_cursor")
+
+            break  # éxito, salimos del retry loop
+
+        except (ChunkedEncodingError, ConnectionError, ReadTimeout) as e:
+            # backoff progresivo y reintento
+            if attempt == MAX_RETRIES - 1:
+                raise  # ya no quedan reintentos
+            time.sleep(2 + attempt)
+
+    # pausa leve (reduce probabilidad de cortes)
+    time.sleep(0.1)
+
+print("Total works descargados:", len(trabajo_peru))
 
 
 ###############################################################################
@@ -131,78 +165,81 @@ print(f"Tiempo total de ejecución: {end_time - start_time:.2f} segundos")
 # El presente url presenta todos los autores cuyo país es Perú
 ###############################################################################
 
-import requests
+# Esta línea de código, me permite identificar si mi conexión con la APi está activa o no
 
-example_url_with_cursor = "https://api.openalex.org/authors?filter=last_known_institutions.country_code:PE&cursor={}"  # URL base
+API_KEY = "v9Ys1yuVJl3kNJYVql74Ip"          # <- pon tu key aquí
+MAILTO  = "enzo.lpge@gmail.com"  # <- opcional pero recomendado
 
-cursor = '*'  # Inicialización del cursor
+params = {
+    "per_page": 1,
+    "api_key": API_KEY,
+    "mailto": MAILTO,
+}
 
-# Se construye una lista que almacenará los autores peruanos
+r = requests.get("https://api.openalex.org/authors", params=params)
+
+print("STATUS:", r.status_code)
+print("BODY:", r.text)
+
+# Esta parte de código me permite identificar cual de los filtros debo considerar
+
+def test_filter(filtro):
+    params = {
+        "filter": filtro,
+        "per_page": 1,
+        "api_key": API_KEY,
+        "mailto": MAILTO,
+    }
+    r = requests.get("https://api.openalex.org/authors", params=params, timeout=60)
+    print("\nFILTER:", filtro)
+    print("STATUS:", r.status_code)
+    print("URL:", r.url)
+    print("BODY:", r.text[:300])  # muestra el mensaje exacto del servidor
+
+filters = [
+    "last_known_institution.country_code:PE",
+    "last_known_institutions.country_code:PE",
+    "affiliations.institution.country_code:PE",
+    "last_known_institutions.id:I4210108322",  # prueba de estructura (ejemplo)
+]
+
+for f in filters:
+    test_filter(f)
+
+# Script para descargar todos los investigadores con afiliación Perú
+
+API_KEY = "v9Ys1yuVJl3kNJYVql74Ip"          # <- pon tu key aquí
+MAILTO  = "enzo.lpge@gmail.com"
+
+session = requests.Session()
+
+cursor = "*"
 autores_peru = []
 
-# Se establece un bucle para la descarga de todas las publicaciones científicas
 while cursor:
-    
-    # set cursor value and request page from OpenAlex
-    url = example_url_with_cursor.format(cursor)
-    print("\n" + url)
-    page_with_results = requests.get(url).json()
-    
-    results = page_with_results['results']
-    for api_result in results:
-       
-        autores_peru.append(api_result)
-        
-    cursor = page_with_results['meta']['next_cursor']
+    params = {
+        "filter": "last_known_institutions.country_code:PE",
+        "per_page": 200,
+        "cursor": cursor,
+        "api_key": API_KEY,
+        "mailto": MAILTO
+    }
 
+    r = session.get("https://api.openalex.org/authors", params=params, timeout=60)
 
-# Al final, se calcula la cantidad de registros en autores_peru
-print(f"La cantidad de autores encontrados es: {len(autores_peru)}")
+    if r.status_code != 200:
+        print("STATUS:", r.status_code)
+        print("URL:", r.url)
+        print("BODY:", r.text[:400])
+        r.raise_for_status()
 
-###############################################################################
-# Un script mejorado y optimizado para la descarga de los autores peruanos
-###############################################################################
+    data = r.json()
+    autores_peru.extend(data.get("results", []))
+    cursor = data.get("meta", {}).get("next_cursor")
 
-import requests
-import time
-import json
+    time.sleep(0.1)
 
-example_url_with_cursor = "https://api.openalex.org/authors?filter=last_known_institutions.country_code:PE&per-page=50&cursor={}"
-cursor = '*'
-autores_peru = []
-
-while cursor:
-    try:
-        # Solicitar datos
-        url = example_url_with_cursor.format(cursor)
-        print(f"Solicitando: {url}")
-        
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()  # Verificar errores HTTP
-        page_with_results = response.json()
-        
-        # Extraer resultados
-        results = page_with_results.get('results', [])
-        autores_peru.extend(results)
-        
-        # Actualizar cursor
-        cursor = page_with_results['meta'].get('next_cursor', None)
-        
-        # Guardar progreso temporalmente
-        with open('autores_peru_temp.json', 'w') as f:
-            json.dump(autores_peru, f)
-        
-    except requests.exceptions.Timeout:
-        print("Tiempo de espera excedido. Reintentando...")
-        time.sleep(5)  # Espera antes de reintentar
-    except requests.exceptions.RequestException as e:
-        print(f"Error en la solicitud: {e}")
-        break
-
-# Guardar resultados finales
-with open('autores_peru.json', 'w') as f:
-    json.dump(autores_peru, f)
-
+print("Autores descargados:", len(autores_peru))
 
 
 ###############################################################################
@@ -1103,7 +1140,6 @@ df = pd.read_sql(
     "SELECT * FROM db_open_peru.tbl_publicaciones",
     con=engine
 )
-
 
 # Se realiza un shape del dataframe df
 df.shape
