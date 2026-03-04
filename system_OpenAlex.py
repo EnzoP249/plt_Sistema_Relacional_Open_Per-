@@ -93,71 +93,30 @@ while cursor:
 print("Total works descargados:", len(trabajo_peru))
 
 
-###############################################################################
-# Un script mejorado y optimizado para la descarga de los trabajos Perú
-###############################################################################
+total_works = len(trabajo_peru)
 
-import requests
-import concurrent.futures
-import time
+works_100_authors = 0
+works_50plus_authors = 0
 
-# URL base con cursor para paginación
-example_url_with_cursor = "https://api.openalex.org/works?filter=authorships.institutions.country_code:PE&cursor={}"
-
-# Función para realizar una solicitud a la API con un cursor específico
-def fetch_page(cursor):
-    try:
-        url = example_url_with_cursor.format(cursor)
-        print(f"Descargando: {url}")
-        response = requests.get(url, timeout=10)  # Establecer un tiempo límite por solicitud
-        response.raise_for_status()  # Lanza excepción si el código HTTP no es 200
-        data = response.json()
+for work in trabajo_peru:
+    
+    authorships = work.get("authorships", [])
+    n_authors = len(authorships)
+    
+    if n_authors == 100:
+        works_100_authors += 1
         
-        # Verificar si los datos están vacíos
-        if 'results' in data and 'meta' in data:
-            return data['results'], data['meta'].get('next_cursor')
-        else:
-            print(f"Datos incompletos o inesperados en el cursor {cursor}")
-            return [], None
-    except Exception as e:
-        print(f"Error al procesar cursor {cursor}: {e}")
-        return [], None
+    if n_authors >= 50:
+        works_50plus_authors += 1
 
-# Función principal para descargar todos los datos
-def fetch_all_works(initial_cursor='*'):
-    trabajo_peru = []
-    cursor = initial_cursor
-    cursors_to_process = [cursor]
-    total_results = 0
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:  # Máximo 5 hilos concurrentes
-        while cursors_to_process:
-            # Enviar las tareas concurrentes
-            future_to_cursor = {executor.submit(fetch_page, cursor): cursor for cursor in cursors_to_process}
-            cursors_to_process = []  # Vaciar la lista temporal
-            
-            for future in concurrent.futures.as_completed(future_to_cursor):
-                try:
-                    results, next_cursor = future.result()
-                    if results:
-                        trabajo_peru.extend(results)
-                        total_results += len(results)
-                        print(f"Resultados descargados hasta ahora: {total_results}")
-                    if next_cursor:
-                        cursors_to_process.append(next_cursor)  # Agregar el próximo cursor a la cola
-                except Exception as e:
-                    print(f"Error procesando un futuro: {e}")
-    
-    return trabajo_peru
 
-# Llamar a la función principal y calcular tiempo de ejecución
-start_time = time.time()
-trabajo_peru = fetch_all_works()
-end_time = time.time()
+print("Total works:", total_works)
+print("Works con exactamente 100 autores (posible truncamiento):", works_100_authors)
+print("Works con >=50 autores:", works_50plus_authors)
 
-# Resultado final
-print(f"La cantidad total de trabajos encontrados es: {len(trabajo_peru)}")
-print(f"Tiempo total de ejecución: {end_time - start_time:.2f} segundos")
+print("Porcentaje posible truncamiento:",
+      round(works_100_authors / total_works * 100, 3), "%")
+
 
 ###############################################################################
 # Estrategia para obtener los autores peruanos usando la paginación compleja
@@ -257,7 +216,6 @@ print(keys_unicos)
 ###############################################################################
 # Se identifica los keys de la lista autores_peru
 ###############################################################################
-
 type(autores_peru)
 
 llaves = set()
@@ -563,7 +521,7 @@ schema = {"publication_id":"string",
           "publication_year":"Int64",
           "type":"category",
           "language":"category",
-          "is_retracted":"int8",
+          "is_retracted":"category",
           "cited_by_count":"Int64",
           "institutions_distinct_count":"Int64",
           "countries_distinct_count":"Int64",
@@ -571,13 +529,17 @@ schema = {"publication_id":"string",
           "issue":"string",
           "first_page":"string",
           "last_page":"string",
-          "acceso":"int8"
+          "acceso":"string"
           }
 
 
 tbl_publicaciones = tbl_publicaciones.astype(schema)
 tbl_publicaciones.info()
 tbl_publicaciones.describe()
+
+# Se analiza un caso particular para validar la descarga
+caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W2073840323"]
+caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W1234567890"]
 
 ###############################################################################
 # Se construye la tabla ODS
@@ -772,6 +734,9 @@ base.shape
 base.info()
 base.columns
 
+caso = base[base["doi"]=="10.1590/s0034-75901993000600010"]
+caso = base[base["publication_id"]=="https://openalex.org/W2073840323"]
+
 # Se considera solo los atributos relacionados con los investigadores del dataframe base
 tab_investigadores = base[["author_id", "author_orcid", "author_name"]]
 
@@ -883,6 +848,18 @@ tbl_investigadores.rename(columns=({
     "scopus":"codigo_scopus"}), inplace=True)
 
 
+# Se analiza la estructura y naturaleza del dataframe tbl_investigadores
+tbl_investigadores.shape
+tbl_investigadores.columns
+tbl_investigadores.nunique()
+
+# Solo se consideran los registros únicos
+tbl_investigadores = tbl_investigadores.drop_duplicates(subset=["author_id"])
+tbl_investigadores.nunique()
+
+# Se elimina la columna scopus del dataframe tbl_investigadores
+del tbl_investigadores["codigo_scopus"]
+
 ###############################################################################
 # SE CONSTRUYE LA TABLA Afiliaciones
 ###############################################################################
@@ -973,10 +950,10 @@ publicainv.shape
 tbl_pub_inv = publicainv[["publication_id","doi","title","author_id", "author_name", "author_position"]]
 # Se analiza un caso en particular
 caso = tbl_pub_inv[tbl_pub_inv["publication_id"]=="https://openalex.org/W1000036331"]
+caso = tbl_pub_inv[tbl_pub_inv["publication_id"]=="https://openalex.org/W2073840323"]
 
 # Se aplica un filtro considerando autores por investigación
 tbl_pub_inv = tbl_pub_inv.drop_duplicates(subset=['publication_id', 'author_id'])
-caso = tbl_pub_inv[tbl_pub_inv["publication_id"]=="https://openalex.org/W1000036331"]
 
 ###############################################################################
 # SE CREA LA TABLA tbl_publInvestigaAfil
