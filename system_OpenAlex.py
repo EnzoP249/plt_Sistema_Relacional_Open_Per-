@@ -349,6 +349,7 @@ tbl_publicaciones["id"].nunique()
 # Se renombre un campo de la tabla tbl_publicaciones
 tbl_publicaciones.rename(columns=({"id":"publication_id"}), inplace=True)
 
+
 # Se comprende la estructura (Data profiling) del dataframe tbl_publicaciones
 tbl_publicaciones.info()
 tbl_publicaciones.describe()
@@ -511,6 +512,22 @@ tbl_publicaciones["cited_by_count"] = pd.to_numeric(tbl_publicaciones["cited_by_
 rep = validar_semantica_tbl_publicaciones(tbl_publicaciones)
 rep["violations"]
 
+
+tbl_publicaciones["is_retracted"] = (
+    tbl_publicaciones["is_retracted"]
+    .astype(str)
+    .str.lower()
+    .map({"true": 1, "false": 0})
+)
+
+tbl_publicaciones["acceso"] = (
+    tbl_publicaciones["acceso"]
+    .astype(str)
+    .str.lower()
+    .map({"true": 1, "false": 0})
+)
+
+
 # Una vez analizada la estructura de mi dataframe, establecido un reporte de validación semántica, y limpiados los datos
 # se procede a tipear los datos
 schema = {"publication_id":"string",
@@ -519,9 +536,9 @@ schema = {"publication_id":"string",
           "pmid":"string",
           "title":"string",
           "publication_year":"Int64",
-          "type":"category",
-          "language":"category",
-          "is_retracted":"category",
+          "type":"string",
+          "language":"string",
+          "is_retracted":"Int64",
           "cited_by_count":"Int64",
           "institutions_distinct_count":"Int64",
           "countries_distinct_count":"Int64",
@@ -529,7 +546,7 @@ schema = {"publication_id":"string",
           "issue":"string",
           "first_page":"string",
           "last_page":"string",
-          "acceso":"string"
+          "acceso":"Int64"
           }
 
 
@@ -860,6 +877,32 @@ tbl_investigadores.nunique()
 # Se elimina la columna scopus del dataframe tbl_investigadores
 del tbl_investigadores["codigo_scopus"]
 
+# Se analiza la estructura del dataframe tbl_investigadores
+tbl_investigadores.shape
+tbl_investigadores.dtypes
+tbl_investigadores.info()
+tbl_investigadores.describe()
+
+# Se identifica la presencia de duplicados en el dataframe tbl_investigadores
+duplicados = tbl_investigadores.duplicated(subset=["author_id"])
+print("¿Existen duplicados?:", duplicados.any())
+
+# Se identifica la presencia de nulos en la columna author_id
+tbl_investigadores["author_id"].isna().sum()
+tbl_investigadores = tbl_investigadores.dropna(subset=["author_id"])
+
+
+# Se realiza un tipeo de los datos que integran el dataframe tbl_investigadores
+schema3 = {"author_id":"string",
+           "author_orcid":"string",
+           "author_name":"string",
+           "works_count":"Int64",
+           "cited_by_count":"Int64"}
+
+
+tbl_investigadores = tbl_investigadores.astype(schema3)
+tbl_investigadores.info()
+
 ###############################################################################
 # SE CONSTRUYE LA TABLA Afiliaciones
 ###############################################################################
@@ -1099,12 +1142,20 @@ tbl_ods.to_sql(
 
 # Se sube la tabla tbl_odsPub a mi database db_open_peru
 tbl_odsPub.to_sql(
-    "tbl_odsPub",
+    "tbl_odspub",
     engine,
     schema="db_open_peru",
     if_exists="append",
     index=False)
 
+
+# Se sube la tabla tbl_investigadores a mi database db_open_peru
+tbl_investigadores.to_sql(
+    "tbl_investigadores",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
 
 
 ###############################################################################
