@@ -12,7 +12,7 @@ Created on Thu Feb 26 15:50:32 2026
 ###############################################################################
 # OBJETIVO: CONSTRUIR UN SISTEMA DE GESTIÓN DE BASES DE DATOS RELACIONAL
 # USANDO DATOS ALMACENADOS EN LA BASE DE DATOS DE NATURALEZA OPEN SOURCE OPENALEX
-###############################################################################
+##############################################################################
 
 import requests
 import pandas as pd
@@ -25,6 +25,7 @@ import json
 from sqlalchemy import create_engine
 import time
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
+from datetime import date
 
 ###############################################################################
 # Estrategia para obtener los works del Perú usando la paginación compleja
@@ -553,6 +554,7 @@ schema = {"publication_id":"string",
 tbl_publicaciones = tbl_publicaciones.astype(schema)
 tbl_publicaciones.info()
 tbl_publicaciones.describe()
+tbl_publicaciones.shape
 
 # Se analiza un caso particular para validar la descarga
 caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W2073840323"]
@@ -797,7 +799,7 @@ for caso2 in autores_peru:
 
 
 # Se crea una lista con los campos id y ids
-list_autor = ["id_autor", "ids_autor"]
+list_autor = ["id_autor", "ids_autor", "works_count", "cited_by_count", "summary_stats"]
 df_autor_codigo = pd.DataFrame.from_records(autores_peru, columns=list_autor)
 
 # Se identifica que tipo de objeto es df_autor_codigo
@@ -808,13 +810,21 @@ print(df_autor_codigo["ids_autor"][600])
 # Se cuentan la cantidad de registros que tiene el dataframe df_autor_codigo
 print(df_autor_codigo["id_autor"].nunique())
 
-# Se construyen nuevas columnas para el dataframe df_autor_codigo
+# Se construyen nuevas columnas para el dataframe df_autor_codigo asociadas con la identificación del autor
 df_autor_codigo['codigo_openalex'] = df_autor_codigo["ids_autor"].apply(lambda x: x.get('openalex', False) if isinstance(x, dict) else False)
 df_autor_codigo['codigo_orcid'] = df_autor_codigo["ids_autor"].apply(lambda x: x.get('orcid', False) if isinstance(x, dict) else False)
 df_autor_codigo['codigo_scopus'] = df_autor_codigo["ids_autor"].apply(lambda x: x.get('scopus', False) if isinstance(x, dict) else False)
 
-# Se eliminan columnas del dataframe df_autor_codigo
+# Se construyen nuevas columnas para el dataframe asociadas con la producción científica del investigador
+df_autor_codigo["2yr_mean_citedness"] = df_autor_codigo["summary_stats"].apply(lambda x: x.get("2yr_mean_citedness", False) if isinstance(x, dict) else False)
+df_autor_codigo["h_index"] = df_autor_codigo["summary_stats"].apply(lambda x: x.get("h_index", False) if isinstance(x, dict) else False)
+df_autor_codigo["i10_index"] = df_autor_codigo["summary_stats"].apply(lambda x: x.get("i10_index", False) if isinstance(x, dict) else False)
+
+
+# Se eliminan columnas del dataframe df_autor_codigo y summary_stats
 del df_autor_codigo["ids_autor"]
+del df_autor_codigo["summary_stats"]
+
 
 # El dataframe df_autor_codigo contiene los códigos de los autores
 # Se analizan otros campos de la lista autores_peru
@@ -847,22 +857,34 @@ def extract_author_id(link):
         return None  # Manejar cualquier error inesperado
 
 # Aplicar la función a la columna 'links'
-fusion_autor["scopus"] = fusion_autor["codigo_scopus"].apply(extract_author_id)
+df_autor_codigo["scopus"] = df_autor_codigo["codigo_scopus"].apply(extract_author_id)
 
-# Del dataframe fusion_autor, se consideran un conjunto de columnas
-fusion_autor = fusion_autor[["id_autor", "scopus", "works_count", "cited_by_count"]]
-# Se renombre la columna id_autor del dataframe fusion_autor a author_id
-fusion_autor.rename(columns=({"id_autor":"author_id"}), inplace=True)
+# Se renombra la columna id_autor del dataframe df_autor_codigo a author_id
+df_autor_codigo.rename(columns=({"id_autor":"author_id"}), inplace=True)
 
 
-# El dataframe fusion_autor se fusiona con el dataframe tab_investigadores
+# El dataframe df_autor_codigo se fusiona con el dataframe tab_investigadores
 # Se construye la tabla investigadores
-tbl_investigadores = pd.merge(tab_investigadores, fusion_autor, on="author_id", how="left")
+tbl_investigadores = pd.merge(tab_investigadores, df_autor_codigo, on="author_id", how="left")
 tbl_investigadores.shape
 tbl_investigadores.columns
-# Se renombran algunos atributos preliminarmente del dataframe tabla_investigadores
-tbl_investigadores.rename(columns=({
-    "scopus":"codigo_scopus"}), inplace=True)
+
+# Se consideran un conjunto de atributos del dataframe tbl_investigadores
+tbl_investigadores = tbl_investigadores[["author_id", "author_orcid","author_name", "works_count",
+                                         "cited_by_count", "2yr_mean_citedness", "h_index", "i10_index"]]
+
+
+# Se construyen dos tablas diferencias en función a tbl_investigadores
+estado = tbl_investigadores.copy()
+
+tbl_investigadores = estado[["author_id", "author_orcid", "author_name"]]
+
+tbl_metricas_investigador = estado[["author_id","works_count",
+                                         "cited_by_count", "2yr_mean_citedness", "h_index", "i10_index"]]
+
+# Se construye un campo que muestra la fecha actual de las métricas
+tbl_metricas_investigador["fecha"] = date.today()
+tbl_metricas_investigador.columns
 
 
 # Se analiza la estructura y naturaleza del dataframe tbl_investigadores
@@ -874,8 +896,6 @@ tbl_investigadores.nunique()
 tbl_investigadores = tbl_investigadores.drop_duplicates(subset=["author_id"])
 tbl_investigadores.nunique()
 
-# Se elimina la columna scopus del dataframe tbl_investigadores
-del tbl_investigadores["codigo_scopus"]
 
 # Se analiza la estructura del dataframe tbl_investigadores
 tbl_investigadores.shape
@@ -895,13 +915,47 @@ tbl_investigadores = tbl_investigadores.dropna(subset=["author_id"])
 # Se realiza un tipeo de los datos que integran el dataframe tbl_investigadores
 schema3 = {"author_id":"string",
            "author_orcid":"string",
-           "author_name":"string",
-           "works_count":"Int64",
-           "cited_by_count":"Int64"}
+           "author_name":"string"}
 
 
 tbl_investigadores = tbl_investigadores.astype(schema3)
 tbl_investigadores.info()
+
+
+# Por otro lado, se analiza también la estructura del dataframe tbl_metricas_investigador
+tbl_metricas_investigador.shape
+tbl_metricas_investigador.dtypes
+tbl_metricas_investigador.info()
+tbl_metricas_investigador.describe()
+
+# Se identifica la presencia de duplicados en el dataframe tbl_metricas_investigador
+duplicados = tbl_metricas_investigador.duplicated(subset=["author_id"])
+print("¿Existen duplicados?:", duplicados.any())
+
+# Se identifica la presencia de nulos en la columna author_id
+tbl_metricas_investigador["author_id"].isna().sum()
+tbl_metricas_investigador = tbl_metricas_investigador.dropna(subset=["author_id"])
+
+# Se renombra algunas columnas del dataframe tbl_metricas_investigador
+tbl_metricas_investigador.rename(columns=({"2yr_mean_citedness":"mean_citedness_2yr"}), inplace=True)
+
+
+# Se realiza un tipeo de los datos que integran el dataframe tbl_metricas_investigador
+schema4 = {"author_id":"string",
+           "works_count":"Int64",
+           "cited_by_count":"Int64",
+           "mean_citedness_2yr":"float64",
+           "h_index":"Int64",
+           "i10_index":"Int64"
+           }
+
+tbl_metricas_investigador = tbl_metricas_investigador.astype(schema4)
+
+# Convertir fecha correctamente
+tbl_metricas_investigador["fecha"] = pd.to_datetime(tbl_metricas_investigador["fecha"])
+
+tbl_metricas_investigador.info()
+
 
 ###############################################################################
 # SE CONSTRUYE LA TABLA Afiliaciones
@@ -913,90 +967,67 @@ base.columns
 tab_afiliaciones = base[["institution_id", "institution_name", "institution_country_code", "institution_type"]]
 tbl_afiliaciones = tab_afiliaciones.drop_duplicates(subset=["institution_id"])
 
+# Se analiza la estructura del dataframe tbl_afiliaciones
+tbl_afiliaciones.shape
+tbl_afiliaciones.dtypes
+tbl_afiliaciones.info()
+tbl_afiliaciones.columns
+
+# Se identifica la presencia de duplicados en el dataframe tbl_afiliaciones
+duplicados = tbl_afiliaciones.duplicated(subset=["institution_id"])
+print("¿Existen duplicados?:", duplicados.any())
+
+
+# Se identifica la presencia de nulos en la columna institution_id
+tbl_afiliaciones["institution_id"].isna().sum()
+tbl_afiliaciones = tbl_afiliaciones.dropna(subset=["institution_id"])
+
+# Se realiza un tipeo de los datos que integran el dataframe tbl_afiliaciones
+schema5 = {"institution_id":"string",
+           "institution_name":"string",
+           "institution_country_code":"string",
+           "institution_type":"string"
+           }
+
+tbl_afiliaciones = tbl_afiliaciones.astype(schema5)
+tbl_afiliaciones.info()
+
 
 ###############################################################################
 # SE CONSTRUYE LA TABLA PublicacionesInvestigadores
 ###############################################################################
 
-categoria = ["id", "doi", "title","authorships"]
-df_invpub = pd.DataFrame.from_records(trabajo_peru, columns=categoria)
-
-# Se eliminan algunas publicaciones duplicadas
-df_invpub = df_invpub.drop_duplicates(subset=["id"])
-
-
-# Se crea una lista para almacenar datos
-almacen = []
-
-# Iterar sobre cada elemento de coautores["authorships"] 
-for i in range(len(df_invpub["authorships"])):
-    try:
-        # Obtener el string de la lista de diccionarios en el índice i
-        lista_autor = df_invpub["authorships"][i]
-               
-        # Iterar sobre cada elemento de la lista de diccionarios
-        for item in lista_autor:
-            try:
-                author_position = item.get('author_position', None)
-                author_id = item['author'].get('id', None)
-                author_name = item['author'].get('display_name', None)
-                author_orcid = item['author'].get('orcid', None)
-                countries = item.get('countries', [])
-                is_corresponding = item.get('is_corresponding', None)
-                raw_author_name = item.get('raw_author_name', None)
-                raw_affiliation_strings = item.get('raw_affiliation_strings', [])
-        
-                for institution in item.get('institutions', []):
-                    try:
-                        institution_id = institution.get('id', None)
-                        institution_name = institution.get('display_name', None)
-                        institution_ror = institution.get('ror', None)
-                        institution_country_code = institution.get('country_code', None)
-                        institution_type = institution.get('type', None)
-                        
-                        author_info = {
-                            'publication_id': df_invpub['id'][i],
-                            'doi': df_invpub['doi'][i],
-                            'title': df_invpub['title'][i],
-                            'author_position': author_position,
-                            'author_id': author_id,
-                            'author_name': author_name,
-                            'author_orcid': author_orcid,
-                            'affiliation_countries': countries,
-                            'institution_id': institution_id,
-                            'institution_name': institution_name,
-                            'institution_ror': institution_ror,
-                            'institution_country_code': institution_country_code,
-                            'institution_type': institution_type,
-                            'is_corresponding': is_corresponding,
-                            'raw_author_name': raw_author_name,
-                            'raw_affiliation_strings': raw_affiliation_strings
-                        }
-                        almacen.append(author_info)
-                    except Exception as e:
-                        print(f"Error processing institution data: {e}")
-        
-            except Exception as e:
-                print(f"Error processing author data: {e}")
-           
-    except (KeyError, ValueError, SyntaxError, IndexError) as e:
-        print("Error al procesar el índice", i, ":", e)
-                
-      
-                
-# Convertir la lista de diccionarios en un DataFrame
-publicainv = pd.DataFrame(almacen)
-publicainv.columns
-publicainv.shape
-
-# Se crea la tabla intermedia entre investigadores y publicaciones denominada tbl_pub_inv
-tbl_pub_inv = publicainv[["publication_id","doi","title","author_id", "author_name", "author_position"]]
-# Se analiza un caso en particular
-caso = tbl_pub_inv[tbl_pub_inv["publication_id"]=="https://openalex.org/W1000036331"]
-caso = tbl_pub_inv[tbl_pub_inv["publication_id"]=="https://openalex.org/W2073840323"]
-
+base.columns
+tbl_pub_inv = base[["publication_id", "author_id", "author_position"]]
 # Se aplica un filtro considerando autores por investigación
 tbl_pub_inv = tbl_pub_inv.drop_duplicates(subset=['publication_id', 'author_id'])
+tbl_pub_inv.info()
+
+# Se calcula la cantidad de nulos del dataframe tbl_pub_inv
+tbl_pub_inv["author_id"].isna().sum()
+tbl_pub_inv["publication_id"].isna().sum()
+
+tbl_pub_inv = tbl_pub_inv.dropna(subset=["author_id"])
+
+schema6 = {"publication_id":"string",
+           "author_id":"string",
+           "author_position":"string"}
+
+
+tbl_pub_inv = tbl_pub_inv.astype(schema6)
+tbl_pub_inv.info()
+
+
+tbl_pub_inv = tbl_pub_inv.copy()
+
+tbl_pub_inv["publication_id"] = tbl_pub_inv["publication_id"].astype("string").str.strip()
+tbl_pub_inv["author_id"] = tbl_pub_inv["author_id"].astype("string").str.strip()
+tbl_pub_inv["author_position"] = tbl_pub_inv["author_position"].astype("string").str.strip()
+
+tbl_pub_inv = tbl_pub_inv[
+    tbl_pub_inv["publication_id"].isin(tbl_publicaciones["publication_id"]) &
+    tbl_pub_inv["author_id"].isin(tbl_investigadores["author_id"])
+]
 
 ###############################################################################
 # SE CREA LA TABLA tbl_publInvestigaAfil
@@ -1152,6 +1183,33 @@ tbl_odsPub.to_sql(
 # Se sube la tabla tbl_investigadores a mi database db_open_peru
 tbl_investigadores.to_sql(
     "tbl_investigadores",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
+
+
+# Se sube la tabla tbl_metricas_investigador a mi database db_open_peru
+tbl_metricas_investigador.to_sql(
+    "tbl_metricas_investigador",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
+
+
+# Se sube la tabla tbl_afiliaciones a mi database db_open_peru
+tbl_afiliaciones.to_sql(
+    "tbl_afiliaciones",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False)
+
+
+# Se sube la tabla tbl_pub_inv a mi database db_open_peru
+tbl_pub_inv.to_sql(
+    "tbl_pub_inv",
     engine,
     schema="db_open_peru",
     if_exists="append",
