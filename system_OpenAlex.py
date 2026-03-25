@@ -555,10 +555,19 @@ tbl_publicaciones = tbl_publicaciones.astype(schema)
 tbl_publicaciones.info()
 tbl_publicaciones.describe()
 tbl_publicaciones.shape
+tbl_publicaciones.columns
 
 # Se analiza un caso particular para validar la descarga
 caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W2073840323"]
-caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W1234567890"]
+caso = tbl_publicaciones[tbl_publicaciones["publication_id"]=="https://openalex.org/W1981665776"]
+
+# Se cuentan las publicaciones únicas del dataframe tbl_publicaciones
+tbl_publicaciones["publication_id"].nunique()
+
+
+# Se construye un ancla considerando tbl_publicaciones
+ancla = tbl_publicaciones[["publication_id"]]
+
 
 ###############################################################################
 # Se construye la tabla ODS
@@ -753,8 +762,25 @@ base.shape
 base.info()
 base.columns
 
+# Se cuentan las publicaciones únicas del dataframe base
+base["publication_id"].nunique()
+
+# Se cuentan los investigadores únicos del dataframe base
+base["author_id"].nunique()
+
+
 caso = base[base["doi"]=="10.1590/s0034-75901993000600010"]
 caso = base[base["publication_id"]=="https://openalex.org/W2073840323"]
+
+# Solo se consideran las publicaciones almacenadas en el dataframe tbl_publicaciones
+base = pd.merge(ancla, base, on="publication_id", how="left")
+
+# Se cuentan las publicaciones únicas del dataframe base
+base["publication_id"].nunique()
+
+# Se cuentan los investigadores únicos del dataframe base
+base["author_id"].nunique()
+
 
 # Se considera solo los atributos relacionados con los investigadores del dataframe base
 tab_investigadores = base[["author_id", "author_orcid", "author_name"]]
@@ -825,22 +851,8 @@ df_autor_codigo["i10_index"] = df_autor_codigo["summary_stats"].apply(lambda x: 
 del df_autor_codigo["ids_autor"]
 del df_autor_codigo["summary_stats"]
 
-
-# El dataframe df_autor_codigo contiene los códigos de los autores
-# Se analizan otros campos de la lista autores_peru
-campo_autor = ["id_autor", "works_count", "cited_by_count"]
-df_campo_autor = pd.DataFrame.from_records(autores_peru, columns=campo_autor)
-
-# Se analiza el tipo de dato del dataframe df_campo_autor
-#df_campo_autor.dtypes
-#print(df_campo_autor["works_count"][10])
-#type(df_campo_autor["works_count"][10])
-#type(df_campo_autor["counts_by_year"][100])
-#print(df_campo_autor["counts_by_year"][100])
-
-# Se realiza una fusion entre el dataframe df_autor_codigo y el dataframe df_campo_autor
-fusion_autor = pd.merge(df_autor_codigo, df_campo_autor, on="id_autor")
-fusion_autor.columns
+# Se consideran los valores únicos del dataframe df_autor_codigo
+df_autor_codigo = df_autor_codigo.drop_duplicates(subset=["author_id"])
 
 
 def extract_author_id(link):
@@ -921,6 +933,9 @@ schema3 = {"author_id":"string",
 tbl_investigadores = tbl_investigadores.astype(schema3)
 tbl_investigadores.info()
 
+# Se cuenta la cantidad de investigadores
+tbl_investigadores["author_id"].nunique()
+
 
 # Por otro lado, se analiza también la estructura del dataframe tbl_metricas_investigador
 tbl_metricas_investigador.shape
@@ -998,16 +1013,43 @@ tbl_afiliaciones.info()
 ###############################################################################
 
 base.columns
-tbl_pub_inv = base[["publication_id", "author_id", "author_position"]]
-# Se aplica un filtro considerando autores por investigación
-tbl_pub_inv = tbl_pub_inv.drop_duplicates(subset=['publication_id', 'author_id'])
-tbl_pub_inv.info()
 
-# Se calcula la cantidad de nulos del dataframe tbl_pub_inv
-tbl_pub_inv["author_id"].isna().sum()
-tbl_pub_inv["publication_id"].isna().sum()
+# Se cuenta la cantidad de publicaciones únicas del dataframe base
+base["publication_id"].nunique()
+# Se cuenta la cantidad de investigadores únicos del dataframe base
+base["author_id"].nunique()
 
-tbl_pub_inv = tbl_pub_inv.dropna(subset=["author_id"])
+
+tbl_pub_inv = base[["publication_id", "author_id", "author_position"]].copy()
+
+# Eliminar nulos en claves de la relación
+tbl_pub_inv = tbl_pub_inv.dropna(subset=["publication_id", "author_id"])
+
+# Limpiar espacios
+tbl_pub_inv["publication_id"] = tbl_pub_inv["publication_id"].astype("string").str.strip()
+tbl_pub_inv["author_id"] = tbl_pub_inv["author_id"].astype("string").str.strip()
+tbl_pub_inv["author_position"] = tbl_pub_inv["author_position"].astype("string").str.strip()
+
+# Eliminar vacíos tipo ""
+tbl_pub_inv = tbl_pub_inv[
+    (tbl_pub_inv["publication_id"] != "") &
+    (tbl_pub_inv["author_id"] != "")
+].copy()
+
+# Eliminar duplicados de la clave compuesta
+tbl_pub_inv = tbl_pub_inv.drop_duplicates(subset=["publication_id", "author_id"])
+
+# Validaciones
+assert not tbl_pub_inv["publication_id"].isna().any()
+assert not tbl_pub_inv["author_id"].isna().any()
+assert not tbl_pub_inv.duplicated(subset=["publication_id", "author_id"]).any()
+
+# Se cuenta la cantidad de publicaciones en el dataframe tbl_pub_inv
+tbl_pub_inv["publication_id"].nunique()
+
+# Se cuenta la cantidad de investigadores en el dataframe tbl_pub_inv
+tbl_pub_inv["author_id"].nunique()
+
 
 schema6 = {"publication_id":"string",
            "author_id":"string",
@@ -1018,25 +1060,81 @@ tbl_pub_inv = tbl_pub_inv.astype(schema6)
 tbl_pub_inv.info()
 
 
+# Limpieza mínima para evitar problemas por espacios
 tbl_pub_inv = tbl_pub_inv.copy()
-
 tbl_pub_inv["publication_id"] = tbl_pub_inv["publication_id"].astype("string").str.strip()
 tbl_pub_inv["author_id"] = tbl_pub_inv["author_id"].astype("string").str.strip()
-tbl_pub_inv["author_position"] = tbl_pub_inv["author_position"].astype("string").str.strip()
 
-tbl_pub_inv = tbl_pub_inv[
-    tbl_pub_inv["publication_id"].isin(tbl_publicaciones["publication_id"]) &
-    tbl_pub_inv["author_id"].isin(tbl_investigadores["author_id"])
-]
+tbl_publicaciones["publication_id"] = tbl_publicaciones["publication_id"].astype("string").str.strip()
+tbl_investigadores["author_id"] = tbl_investigadores["author_id"].astype("string").str.strip()
+
+# Validar publication_id faltantes
+faltan_publicaciones = tbl_pub_inv.loc[
+    ~tbl_pub_inv["publication_id"].isin(tbl_publicaciones["publication_id"])
+].copy()
+
+# Validar author_id faltantes
+faltan_autores = tbl_pub_inv.loc[
+    ~tbl_pub_inv["author_id"].isin(tbl_investigadores["author_id"])
+].copy()
+
+print("Filas de la tabla hija:", len(tbl_pub_inv))
+print("publication_id faltantes:", faltan_publicaciones["publication_id"].nunique())
+print("author_id faltantes:", faltan_autores["author_id"].nunique())
 
 ###############################################################################
 # SE CREA LA TABLA tbl_publInvestigaAfil
 ###############################################################################
-publicainv.columns
+base.columns
+
+# Se cuenta la cantidad de publicaciones únicas del dataframe base
+base["publication_id"].nunique()
+# Se cuenta la cantidad de investigadores únicos del dataframe base
+base["author_id"].nunique()
+# Se cuenta la cantidad de afiliaciones únicas del dataframe base
+base["institution_id"].nunique()
 
 # Se crea la tabla PublInvestigaAfil
-tbl_pubinvestigaafil = publicainv[["publication_id", "doi", "author_id", "author_name", "institution_id"]]
-caso1 = tbl_pubinvestigaafil[tbl_pubinvestigaafil["publication_id"]=="https://openalex.org/W1000036331"]
+tbl_pubinvestigaafil = base[["publication_id", "author_id", "institution_id"]].copy()
+
+# Eliminar nulos en claves de la relación
+tbl_pubinvestigaafil = tbl_pubinvestigaafil.dropna(subset=["publication_id", "author_id", "institution_id"])
+
+
+# Limpiar strings
+for col in ["publication_id", "author_id", "institution_id"]:
+    tbl_pubinvestigaafil[col] = (
+        tbl_pubinvestigaafil[col]
+        .astype("string")
+        .str.strip()
+    )
+
+# Eliminar vacíos ""
+tbl_pubinvestigaafil = tbl_pubinvestigaafil[
+    (tbl_pubinvestigaafil["publication_id"] != "") &
+    (tbl_pubinvestigaafil["author_id"] != "") &
+    (tbl_pubinvestigaafil["institution_id"] != "")
+].copy()
+
+# Eliminar duplicados de la clave ternaria
+tbl_pubinvestigaafil = tbl_pubinvestigaafil.drop_duplicates(
+    subset=["publication_id", "author_id", "institution_id"]
+)
+
+# Validación
+assert not tbl_pubinvestigaafil.duplicated(
+    subset=["publication_id", "author_id", "institution_id"]
+).any()
+
+
+schema7 = {"publication_id":"string",
+           "author_id":"string",
+           "institution_id":"string"}
+
+
+tbl_pubinvestigaafil = tbl_pubinvestigaafil.astype(schema7)
+tbl_pubinvestigaafil.info()
+
 
 # Se desarrolla un ejercio para examinar la representatividad de publicaciones científicas 
 # Se desarrolla un merge con tabla tabla_afiliaciones
@@ -1159,7 +1257,8 @@ tbl_publicaciones.to_sql(
     engine,
     schema="db_open_peru",
     if_exists="append",
-    index=False
+    index=False,
+    chunksize=1000
 )
 
 # Se sube la tabla tbl_ods a mi database db_open_peru
@@ -1213,7 +1312,20 @@ tbl_pub_inv.to_sql(
     engine,
     schema="db_open_peru",
     if_exists="append",
-    index=False)
+    index=False,
+    chunksize=1000
+)
+
+
+# Se sube la tabla tbl_pubinvestigaafil a mi database db_open_peru
+tbl_pubinvestigaafil.to_sql(
+    "tbl_pubinvestigaafil",
+    engine,
+    schema="db_open_peru",
+    if_exists="append",
+    index=False,
+    chunksize=1000
+)
 
 
 ###############################################################################
